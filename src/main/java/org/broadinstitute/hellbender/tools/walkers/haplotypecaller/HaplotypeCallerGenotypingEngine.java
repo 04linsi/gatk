@@ -32,7 +32,6 @@ import java.util.stream.Collectors;
  */
 public class HaplotypeCallerGenotypingEngine extends GenotypingEngine<StandardCallerArgumentCollection> {
 
-    public static final int ALLELE_EXTENSION = 2;
     private static final Logger logger = LogManager.getLogger(HaplotypeCallerGenotypingEngine.class);
 
 
@@ -180,7 +179,8 @@ public class HaplotypeCallerGenotypingEngine extends GenotypingEngine<StandardCa
 
             mergedVC = removeAltAllelesIfTooManyGenotypes(ploidy, alleleMapper, mergedVC);
 
-            ReadLikelihoods<Allele> readAlleleLikelihoods = readLikelihoods.marginalize(alleleMapper, new SimpleInterval(mergedVC).expandWithinContig(ALLELE_EXTENSION, header.getSequenceDictionary()));
+            ReadLikelihoods<Allele> readAlleleLikelihoods = readLikelihoods.marginalize(alleleMapper);
+            readAlleleLikelihoods.filterToOnlyOverlappingReads(new SimpleInterval(mergedVC).expandWithinContig(hcArgs.informativeReadOverlapRadius, header.getSequenceDictionary()));
             if (configuration.isSampleContaminationPresent()) {
                 readAlleleLikelihoods.contaminationDownsampling(configuration.getSampleContamination());
             }
@@ -465,13 +465,13 @@ public class HaplotypeCallerGenotypingEngine extends GenotypingEngine<StandardCa
         // Otherwise (else part) we need to do it again.
         if (hcArgs.useFilteredReadMapForAnnotations || !configuration.isSampleContaminationPresent()) {
             readAlleleLikelihoodsForAnnotations = readAlleleLikelihoodsForGenotyping;
-            readAlleleLikelihoodsForAnnotations.filterToOnlyOverlappingReads(loc);
         } else {
-            readAlleleLikelihoodsForAnnotations = readHaplotypeLikelihoods.marginalize(alleleMapper, loc);
+            readAlleleLikelihoodsForAnnotations = readHaplotypeLikelihoods.marginalize(alleleMapper);
             if (emitReferenceConfidence) {
                 readAlleleLikelihoodsForAnnotations.addNonReferenceAllele(Allele.NON_REF_ALLELE);
             }
         }
+        readAlleleLikelihoodsForAnnotations.filterToOnlyOverlappingReads(loc);
 
         if (call.getAlleles().size() != readAlleleLikelihoodsForAnnotations.numberOfAlleles()) {
             readAlleleLikelihoodsForAnnotations.updateNonRefAlleleLikelihoods(new IndexedAlleleList<>(call.getAlleles()));

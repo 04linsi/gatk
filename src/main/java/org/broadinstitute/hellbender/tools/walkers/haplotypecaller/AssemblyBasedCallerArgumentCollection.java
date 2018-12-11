@@ -25,6 +25,7 @@ public abstract class AssemblyBasedCallerArgumentCollection {
 
     public static final String MIN_BASE_QUALITY_SCORE_LONG_NAME = "min-base-quality-score";
     public static final String SMITH_WATERMAN_LONG_NAME = "smith-waterman";
+    public static final String ALLELE_EXTENSION_LONG_NAME = "allele-informative-reads-overlap-radius";
 
     public ReadThreadingAssembler createReadThreadingAssembler() {
         final ReadThreadingAssembler assemblyEngine = assemblerArgs.makeReadThreadingAssembler();
@@ -123,4 +124,15 @@ public abstract class AssemblyBasedCallerArgumentCollection {
     @Argument(fullName = MAX_MNP_DISTANCE_LONG_NAME, shortName = MAX_MNP_DISTANCE_SHORT_NAME,
             doc = "Two or more phased substitutions separated by this distance or less are merged into MNPs.", optional = true)
     public int maxMnpDistance = getDefaultMaxMnpDistance();
+
+    @Advanced
+    @Argument(fullName = ALLELE_EXTENSION_LONG_NAME,
+            doc = "Likelihood and read-based annotations will only take in consideration reads " +
+                    "that overlap the variant or any base on further than this distance expressed in base pairs",
+            optional = true)
+    public int informativeReadOverlapRadius = 0;
+
+    @Advanced
+    @Argument(fullName= USE_FILTERED_READS_FOR_ANNOTATIONS_LONG_NAME, doc = "Use the contamination-filtered read maps for the purposes of annotating variants", optional=true)
+    public boolean useFilteredReadMapForAnnotations = false;
 }

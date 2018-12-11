@@ -96,8 +96,8 @@ public class SomaticGenotypingEngine {
 
             // converting ReadLikelihoods<Haplotype> to ReadLikelihoods<Allele>
             final Map<Allele, List<Haplotype>> alleleMapper = AssemblyBasedCallerUtils.createAlleleMapper(mergedVC, loc, haplotypes, null);
-            final ReadLikelihoods<Allele> logLikelihoods = logReadLikelihoods.marginalize(alleleMapper,
-                    new SimpleInterval(mergedVC).expandWithinContig(HaplotypeCallerGenotypingEngine.ALLELE_EXTENSION, header.getSequenceDictionary()));
+            final ReadLikelihoods<Allele> logLikelihoods = logReadLikelihoods.marginalize(alleleMapper);
+            logLikelihoods.filterToOnlyOverlappingReads(new SimpleInterval(mergedVC).expandWithinContig(MTAC.informativeReadOverlapRadius, header.getSequenceDictionary()));
 
             if (emitRefConf) {
                 mergedVC = ReferenceConfidenceUtils.addNonRefSymbolicAllele(mergedVC);

@@ -18,6 +18,8 @@ import org.broadinstitute.hellbender.utils.read.GATKRead;
 
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -618,7 +620,7 @@ public class ReadLikelihoods<A extends Allele> implements SampleList, AlleleList
         final int[] oldToNewAlleleIndexMap = oldToNewAlleleIndexMap(newToOldAlleleMap, oldAlleleCount, newAlleles);
 
         // We calculate the marginal likelihoods.
-        final double[][][] newLikelihoodValues = marginalLikelihoods(oldAlleleCount, newAlleleCount, oldToNewAlleleIndexMap, null);
+        final double[][][] newLikelihoodValues = marginalLikelihoods(oldAlleleCount, newAlleleCount, oldToNewAlleleIndexMap);
 
         final int sampleCount = samples.numberOfSamples();
 
@@ -639,97 +641,8 @@ public class ReadLikelihoods<A extends Allele> implements SampleList, AlleleList
         return result;
     }
 
-
-    /**
-     * Perform marginalization from an allele set to another (smaller one) taking the maximum value
-     * for each read in the original allele subset.
-     *
-     * @param newToOldAlleleMap map where the keys are the new alleles and the value list the original
-     *                          alleles that correspond to the new one.
-     * @return never {@code null}. The result will have the requested set of new alleles (keys in {@code newToOldAlleleMap}, and
-     * the same set of samples and reads as the original.
-     *
-     * @param overlap if not {@code null}, only reads that overlap the location (with unclipping) will be present in
-     *                        the output read-collection.
-     *
-     * @throws IllegalArgumentException is {@code newToOldAlleleMap} is {@code null} or contains {@code null} values,
-     *  or its values contain reference to non-existing alleles in this read-likelihood collection. Also no new allele
-     *  can have zero old alleles mapping nor two new alleles can make reference to the same old allele.
-     */
-    public <B extends Allele> ReadLikelihoods<B> marginalize(final Map<B, List<A>> newToOldAlleleMap, final Locatable overlap) {
-        Utils.nonNull(newToOldAlleleMap, "the input allele mapping cannot be null");
-        if (overlap == null) {
-            return marginalize(newToOldAlleleMap);
-        }
-
-        @SuppressWarnings("unchecked")
-        final B[] newAlleles = newToOldAlleleMap.keySet().toArray((B[]) new Allele[newToOldAlleleMap.size()]);
-        final int oldAlleleCount = alleles.numberOfAlleles();
-        final int newAlleleCount = newAlleles.length;
-
-        // we get the index correspondence between new old -> new allele, -1 entries mean that the old
-        // allele does not map to any new; supported but typically not the case.
-        final int[] oldToNewAlleleIndexMap = oldToNewAlleleIndexMap(newToOldAlleleMap, oldAlleleCount, newAlleles);
-
-        final int[][] readsToKeep = overlappingReadIndicesBySampleIndex(overlap);
-        // We calculate the marginal likelihoods.
-
-        final double[][][] newLikelihoodValues = marginalLikelihoods(oldAlleleCount, newAlleleCount, oldToNewAlleleIndexMap, readsToKeep);
-
-        final int sampleCount = samples.numberOfSamples();
-
-        @SuppressWarnings({"rawtypes","unchecked"})
-        final Object2IntMap<GATKRead>[] newReadIndexBySampleIndex = (Object2IntMap<GATKRead>[])new Object2IntMap[sampleCount];
-        final GATKRead[][] newReadsBySampleIndex = new GATKRead[sampleCount][];
-
-        for (int s = 0; s < sampleCount; s++) {
-            final int[] sampleReadsToKeep = readsToKeep[s];
-            final GATKRead[] oldSampleReads = readsBySampleIndex[s];
-            final int oldSampleReadCount = oldSampleReads.length;
-            final int newSampleReadCount = sampleReadsToKeep.length;
-            if (newSampleReadCount == oldSampleReadCount) {
-                newReadsBySampleIndex[s] = oldSampleReads.clone();
-            } else {
-                newReadsBySampleIndex[s] = new GATKRead[newSampleReadCount];
-                for (int i = 0; i < newSampleReadCount; i++) {
-                    newReadsBySampleIndex[s][i] = oldSampleReads[sampleReadsToKeep[i]];
-                }
-            }
-        }
-
-        // Finally we create the new read-likelihood
-        final ReadLikelihoods<B> result = new ReadLikelihoods<>(new IndexedAlleleList<>(newAlleles), samples,
-                newReadsBySampleIndex,
-                newReadIndexBySampleIndex, newLikelihoodValues);
-        result.isNaturalLog = isNaturalLog;
-        return result;
-    }
-
-    private int[][] overlappingReadIndicesBySampleIndex(final Locatable overlap) {
-        if (overlap == null) {
-            return null;
-        }
-        final int sampleCount = samples.numberOfSamples();
-        final int[][] result = new int[sampleCount][];
-        final IntArrayList buffer = new IntArrayList(200);
-
-        for (int s = 0; s < sampleCount; s++) {
-            buffer.clear();
-            final GATKRead[] sampleReads = readsBySampleIndex[s];
-            final int sampleReadCount = sampleReads.length;
-            buffer.ensureCapacity(sampleReadCount);
-            for (int r = 0; r < sampleReadCount; r++) {
-                if (sampleReads[r].overlaps(overlap)) {
-                    buffer.add(r);
-                }
-            }
-            result[s] = buffer.toIntArray();
-        }
-        return result;
-    }
-
     // Calculate the marginal likelihoods considering the old -> new allele index mapping.
-    private double[][][] marginalLikelihoods(final int oldAlleleCount, final int newAlleleCount, final int[] oldToNewAlleleIndexMap, final int[][] readsToKeep) {
+    private double[][][] marginalLikelihoods(final int oldAlleleCount, final int newAlleleCount, final int[] oldToNewAlleleIndexMap) {
 
         final int sampleCount = samples.numberOfSamples();
         final double[][][] result = new double[sampleCount][][];
@@ -737,22 +650,19 @@ public class ReadLikelihoods<A extends Allele> implements SampleList, AlleleList
         for (int s = 0; s < sampleCount; s++) {
             final int sampleReadCount = readsBySampleIndex[s].length;
             final double[][] oldSampleValues = valuesBySampleIndex[s];
-            final int[] sampleReadToKeep = readsToKeep == null || readsToKeep[s].length == sampleReadCount ? null : readsToKeep[s];
-            final int newSampleReadCount = sampleReadToKeep == null ? sampleReadCount : sampleReadToKeep.length;
-            final double[][] newSampleValues = result[s] = new double[newAlleleCount][newSampleReadCount];
+            final double[][] newSampleValues = result[s] = new double[newAlleleCount][sampleReadCount];
             // We initiate all likelihoods to -Inf.
             for (int a = 0; a < newAlleleCount; a++) {
                 Arrays.fill(newSampleValues[a], Double.NEGATIVE_INFINITY);
             }
             // For each old allele and read we update the new table keeping the maximum likelihood.
-            for (int r = 0; r < newSampleReadCount; r++) {
+            for (int r = 0; r < sampleReadCount; r++) {
                 for (int a = 0; a < oldAlleleCount; a++) {
-                    final int oldReadIndex = newSampleReadCount == sampleReadCount ? r : sampleReadToKeep[r];
                     final int newAlleleIndex = oldToNewAlleleIndexMap[a];
                     if (newAlleleIndex == -1) {
                         continue;
                     }
-                    final double likelihood = oldSampleValues[a][oldReadIndex];
+                    final double likelihood = oldSampleValues[a][r];
                     if (likelihood > newSampleValues[newAlleleIndex][r]) {
                         newSampleValues[newAlleleIndex][r] = likelihood;
                     }
@@ -936,7 +846,6 @@ public class ReadLikelihoods<A extends Allele> implements SampleList, AlleleList
      * <p>
      *     This method does
      * </p>
-     *
      *
      * @param allelesToConsider
      */
@@ -1187,16 +1096,34 @@ public class ReadLikelihoods<A extends Allele> implements SampleList, AlleleList
      *
      * @throws IllegalArgumentException the location cannot be {@code null} nor unmapped.
      */
-    public void filterToOnlyOverlappingReads(final SimpleInterval location) {
+    public void filterToOnlyOverlappingReads(final Locatable location) {
         Utils.nonNull(location, "the location cannot be null");
+        filterReads(r -> r.overlaps(location));
+    }
 
+    /**
+     * Remove those reads that do not comply with a requirement.
+     *
+     * @param predicate the predicate representing the requirement.
+     *
+     * <p>
+     *     This method modifies the current read-likelihoods collection.
+     * </p>
+     * <p>
+     *     Any exception thrown by the predicate will be propagated to the calling code.
+     * </p>
+     *
+     * @throws IllegalArgumentException if {@code predicate} is {@code null}.
+     */
+    public void filterReads(final Predicate<GATKRead> predicate) {
+        Utils.nonNull(predicate);
         final int sampleCount = samples.numberOfSamples();
 
         final int alleleCount = alleles.numberOfAlleles();
         for (int s = 0; s < sampleCount; s++) {
             final GATKRead[] sampleReads = readsBySampleIndex[s];
             final List<Integer> removeIndices = new IndexRange(0, sampleReads.length)
-                    .filter(r -> !sampleReads[r].overlaps(location));
+                    .filter(i -> predicate.test(sampleReads[i]));
             removeSampleReads(s, removeIndices, alleleCount);
         }
     }

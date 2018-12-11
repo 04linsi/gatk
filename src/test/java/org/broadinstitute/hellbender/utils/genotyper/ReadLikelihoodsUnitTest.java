@@ -201,7 +201,8 @@ public final class ReadLikelihoodsUnitTest {
         final ReadLikelihoods<Allele> original = new ReadLikelihoods<>(new IndexedSampleList(samples), new IndexedAlleleList<>(alleles), reads);
         final GenomeLoc evenReadOverlap = locParser.createGenomeLoc(SAM_HEADER.getSequenceDictionary().getSequences().get(0).getSequenceName(),EVEN_READ_START ,EVEN_READ_START );
         fillWithRandomLikelihoods(samples, alleles, original);
-        final ReadLikelihoods<Allele> marginalized = original.marginalize(newToOldAlleleMapping,evenReadOverlap);
+        final ReadLikelihoods<Allele> marginalized = original.marginalize(newToOldAlleleMapping);
+        marginalized.filterToOnlyOverlappingReads(evenReadOverlap);
         Assert.assertNotNull(marginalized);
         Assert.assertEquals(newToOldAlleleMapping.size(), marginalized.numberOfAlleles());
         for (int a = 0; a < marginalized.numberOfAlleles(); a++) {
